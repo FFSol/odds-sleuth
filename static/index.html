@@ -28,6 +28,7 @@
       font-size: 14px;
       line-height: 1.6;
       height: 100vh;
+      height: 100dvh; /* dynamic viewport — handles mobile browser chrome */
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -50,6 +51,30 @@
       background: var(--text-muted); flex-shrink: 0;
     }
     .status-dot.live { background: var(--green); }
+
+    /* Mobile tab bar */
+    .tab-bar {
+      display: none;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tab-bar button {
+      flex: 1;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 12px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-bar button.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
 
     /* Layout */
     .layout {
@@ -87,6 +112,7 @@
       font-weight: 600;
       cursor: pointer;
       transition: opacity 0.15s;
+      min-height: 36px; /* touch target */
     }
     #generate-btn:hover { opacity: 0.85; }
     #generate-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -95,6 +121,7 @@
       flex: 1;
       overflow-y: auto;
       padding: 20px;
+      -webkit-overflow-scrolling: touch;
     }
 
     #briefing-content {
@@ -126,7 +153,15 @@
       padding: 8px 16px;
       background: #0d0f18;
     }
-    .trace-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .trace-label {
+      font-size: 10px; color: var(--text-muted); text-transform: uppercase;
+      letter-spacing: 0.05em; margin-bottom: 4px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .trace-toggle {
+      background: none; border: none; color: var(--text-muted);
+      font-size: 10px; cursor: pointer; padding: 0;
+    }
     .trace-item {
       font-family: var(--mono);
       font-size: 11px;
@@ -134,6 +169,7 @@
       display: flex;
       gap: 8px;
       align-items: baseline;
+      flex-wrap: wrap;
     }
     .trace-item .fn { color: var(--green); }
     .trace-item .args { color: var(--text-muted); }
@@ -155,6 +191,7 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
+      -webkit-overflow-scrolling: touch;
     }
 
     .msg {
@@ -204,7 +241,7 @@
       color: var(--text);
       padding: 8px 12px;
       border-radius: 6px;
-      font-size: 13px;
+      font-size: 16px; /* prevents iOS zoom on focus */
       resize: none;
       outline: none;
       font-family: inherit;
@@ -226,6 +263,8 @@
       cursor: pointer;
       align-self: flex-end;
       transition: opacity 0.15s;
+      min-height: 44px; /* touch target */
+      min-width: 60px;
     }
     #send-btn:hover { opacity: 0.85; }
     #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -256,6 +295,45 @@
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* -----------------------------------------------------------------------
+       Mobile — single panel + tab bar
+    ----------------------------------------------------------------------- */
+    @media (max-width: 767px) {
+      header span { display: none; } /* hide subtitle, keep title + dot */
+
+      .tab-bar { display: flex; }
+
+      .layout { position: relative; }
+
+      .panel-briefing,
+      .panel-chat {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        border-right: none;
+        transition: opacity 0.15s, visibility 0.15s;
+      }
+
+      /* hidden panel */
+      .panel-briefing.tab-hidden,
+      .panel-chat.tab-hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      .panel-chat { width: 100%; }
+
+      /* tighter padding on small screens */
+      .briefing-scroll { padding: 14px; }
+      .chat-messages { padding: 12px; }
+
+      /* collapse tool trace to 80px on mobile */
+      .tool-trace { max-height: 80px; }
+
+      #briefing-content { font-size: 14px; }
+    }
   </style>
 </head>
 <body>
@@ -265,6 +343,11 @@
   <h1>odds-sleuth</h1>
   <span>NBA Market Intelligence · 10 games · 8 books</span>
 </header>
+
+<div class="tab-bar" id="tab-bar">
+  <button class="active" id="tab-briefing" onclick="switchTab('briefing')">📊 Briefing</button>
+  <button id="tab-chat" onclick="switchTab('chat')">💬 Chat</button>
+</div>
 
 <div class="layout">
 
@@ -284,7 +367,10 @@
     </div>
 
     <div class="tool-trace" id="tool-trace" style="display:none">
-      <div class="trace-label">Agent tool calls</div>
+      <div class="trace-label">
+        Agent tool calls
+        <button class="trace-toggle" onclick="toggleTrace()" id="trace-toggle-btn">▼ hide</button>
+      </div>
       <div id="trace-items"></div>
     </div>
   </div>
@@ -320,6 +406,31 @@ let briefingText = '';
 let chatHistory = [];
 let isGenerating = false;
 let isChatting = false;
+let activeTab = 'briefing';
+let traceCollapsed = false;
+
+// ---------------------------------------------------------------------------
+// Tab switching (mobile)
+// ---------------------------------------------------------------------------
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('tab-briefing').classList.toggle('active', tab === 'briefing');
+  document.getElementById('tab-chat').classList.toggle('active', tab === 'chat');
+  document.querySelector('.panel-briefing').classList.toggle('tab-hidden', tab !== 'briefing');
+  document.querySelector('.panel-chat').classList.toggle('tab-hidden', tab !== 'chat');
+  if (tab === 'chat') document.getElementById('chat-input').focus();
+}
+
+// ---------------------------------------------------------------------------
+// Tool trace toggle
+// ---------------------------------------------------------------------------
+function toggleTrace() {
+  traceCollapsed = !traceCollapsed;
+  const items = document.getElementById('trace-items');
+  const btn = document.getElementById('trace-toggle-btn');
+  items.style.display = traceCollapsed ? 'none' : '';
+  btn.textContent = traceCollapsed ? '▶ show' : '▼ hide';
+}
 
 // ---------------------------------------------------------------------------
 // Markdown-lite renderer
@@ -421,12 +532,20 @@ async function generateBriefing() {
           content.innerHTML = renderMarkdown(briefingText);
           document.getElementById('chat-input').disabled = false;
           document.getElementById('send-btn').disabled = false;
-          document.getElementById('chat-input').focus();
 
           // Update chat hint
           const msgs = document.getElementById('chat-messages');
           msgs.innerHTML = '';
           appendMsg('system', 'Briefing ready. Ask a follow-up question below.');
+
+          // On mobile, update the chat tab label and auto-switch after a beat
+          const tabChat = document.getElementById('tab-chat');
+          if (tabChat) tabChat.textContent = '💬 Chat ✓';
+          if (window.innerWidth < 768) {
+            setTimeout(() => switchTab('chat'), 800);
+          } else {
+            document.getElementById('chat-input').focus();
+          }
         }
       }
     }
