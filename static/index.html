@@ -372,16 +372,17 @@
   <div class="panel-chat">
     <div class="panel-header">
       <span class="panel-title">Follow-up Chat</span>
+      <span id="chat-status" style="font-size:11px;color:var(--yellow)">⚠ Generate a briefing first</span>
     </div>
 
     <div class="chat-messages" id="chat-messages">
-      <div class="msg system">Generate a briefing first, then ask follow-up questions here.</div>
+      <div class="msg system">Hit "Generate Briefing" on the left, then ask questions here.</div>
     </div>
 
     <div class="chat-input-area">
       <textarea
         id="chat-input"
-        placeholder="Ask about the briefing… (Enter to send)"
+        placeholder="Generate a briefing first…"
         disabled
         onkeydown="handleChatKey(event)"
       ></textarea>
@@ -529,7 +530,9 @@ async function generateBriefing() {
           // Update chat hint
           const msgs = document.getElementById('chat-messages');
           msgs.innerHTML = '';
-          appendMsg('system', 'Briefing ready. Ask a follow-up question below.');
+          appendMsg('system', 'Briefing ready. Ask anything about it below.');
+          document.getElementById('chat-status').textContent = '';
+          document.getElementById('chat-input').placeholder = 'Ask about the briefing… (Enter to send)';
 
           // On mobile, update the chat tab label and auto-switch after a beat
           const tabChat = document.getElementById('tab-chat');
