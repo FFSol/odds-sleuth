@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
   <title>odds-sleuth — NBA Market Briefing</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -300,36 +300,29 @@
        Mobile — single panel + tab bar
     ----------------------------------------------------------------------- */
     @media (max-width: 767px) {
-      header span { display: none; } /* hide subtitle, keep title + dot */
+      header span { display: none; }
 
       .tab-bar { display: flex; }
 
-      .layout { position: relative; }
-
+      /* panels stack as normal flex children — keyboard can push layout up */
       .panel-briefing,
       .panel-chat {
-        position: absolute;
-        inset: 0;
         width: 100%;
         border-right: none;
-        transition: opacity 0.15s, visibility 0.15s;
+        flex-shrink: 0;
       }
 
-      /* hidden panel */
+      /* hidden panel is fully removed from flow */
       .panel-briefing.tab-hidden,
       .panel-chat.tab-hidden {
-        opacity: 0;
-        visibility: hidden;
-        pointer-events: none;
+        display: none;
       }
-
-      .panel-chat { width: 100%; }
 
       /* tighter padding on small screens */
       .briefing-scroll { padding: 14px; }
       .chat-messages { padding: 12px; }
 
-      /* collapse tool trace to 80px on mobile */
+      /* collapse tool trace on mobile */
       .tool-trace { max-height: 80px; }
 
       #briefing-content { font-size: 14px; }
@@ -418,7 +411,7 @@ function switchTab(tab) {
   document.getElementById('tab-chat').classList.toggle('active', tab === 'chat');
   document.querySelector('.panel-briefing').classList.toggle('tab-hidden', tab !== 'briefing');
   document.querySelector('.panel-chat').classList.toggle('tab-hidden', tab !== 'chat');
-  if (tab === 'chat') document.getElementById('chat-input').focus();
+  // don't force-focus on switch — let the user tap the input to open the keyboard
 }
 
 // ---------------------------------------------------------------------------
