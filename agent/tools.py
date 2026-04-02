@@ -452,6 +452,188 @@ def rank_sportsbooks() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Tool 8: get_live_draftkings_odds
+# ---------------------------------------------------------------------------
+
+_DK_API_URL = (
+    "https://sportsbook-nash.draftkings.com"
+    "/api/sportscontent/dkusnj/v1/leagues/42648"
+)
+
+
+def get_live_draftkings_odds(nba_odds: dict | None = None) -> dict:
+    """Fetch live NBA odds from the DraftKings public API.
+
+    If *nba_odds* is provided it is used directly; otherwise the DK API is
+    called.  On any failure the tool silently falls back to the cached
+    DraftKings entries in odds.json.
+
+    Returns structured moneyline, spread, and total odds per game.
+    """
+    import signal
+    import urllib.request
+
+    if nba_odds is not None:
+        return _parse_draftkings_response(nba_odds)
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError("DK API request timed out")
+
+    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+    try:
+        signal.alarm(5)  # hard 5-second deadline
+        req = urllib.request.Request(
+            _DK_API_URL,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (compatible; odds-sleuth/1.0)",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        signal.alarm(0)
+        return _parse_draftkings_response(data)
+    except Exception:
+        signal.alarm(0)
+        return _fallback_cached_dk_odds()
+    finally:
+        signal.signal(signal.SIGALRM, old_handler)
+
+
+def _parse_american_odds_str(odds_str: str) -> int:
+    """Convert DK display odds (unicode minus / plus) to an integer."""
+    cleaned = odds_str.replace("\u2212", "-").replace("\u002B", "+").replace("−", "-")
+    return int(cleaned)
+
+
+def _parse_draftkings_response(data: dict) -> dict:
+    """Transform a DK sportscontent JSON payload into a structured odds dict."""
+    events = {e["id"]: e for e in data.get("events", [])}
+
+    # Index markets by (eventId, marketTypeName)
+    markets_by_event: dict[str, dict[str, dict]] = {}
+    for m in data.get("markets", []):
+        eid = m["eventId"]
+        mtype = m["marketType"]["name"]             # Moneyline / Spread / Total
+        markets_by_event.setdefault(eid, {})[mtype] = m
+
+    # Index selections by marketId
+    sels_by_market: dict[str, list[dict]] = {}
+    for s in data.get("selections", []):
+        sels_by_market.setdefault(s["marketId"], []).append(s)
+
+    games: list[dict] = []
+    for eid, event in events.items():
+        participants = event.get("participants", [])
+        home = next((p for p in participants if p.get("venueRole") == "Home"), None)
+        away = next((p for p in participants if p.get("venueRole") == "Away"), None)
+        if not home or not away:
+            continue
+
+        em = markets_by_event.get(eid, {})
+        game: dict[str, Any] = {
+            "event_id": eid,
+            "name": event.get("name", ""),
+            "start_time": event.get("startEventDate", ""),
+            "home_team": home["name"],
+            "away_team": away["name"],
+            "markets": {},
+        }
+
+        # --- Moneyline ---
+        if "Moneyline" in em:
+            ml_sels = sels_by_market.get(em["Moneyline"]["id"], [])
+            h = next((s for s in ml_sels if s.get("outcomeType") == "Home"), None)
+            a = next((s for s in ml_sels if s.get("outcomeType") == "Away"), None)
+            if h and a:
+                game["markets"]["moneyline"] = {
+                    "home_odds": _parse_american_odds_str(h["displayOdds"]["american"]),
+                    "away_odds": _parse_american_odds_str(a["displayOdds"]["american"]),
+                    "home_decimal": h.get("trueOdds"),
+                    "away_decimal": a.get("trueOdds"),
+                }
+
+        # --- Spread ---
+        if "Spread" in em:
+            sp_sels = [s for s in sels_by_market.get(em["Spread"]["id"], []) if s.get("main")]
+            h = next((s for s in sp_sels if s.get("outcomeType") == "Home"), None)
+            a = next((s for s in sp_sels if s.get("outcomeType") == "Away"), None)
+            if h and a:
+                game["markets"]["spread"] = {
+                    "home_line": h.get("points", 0),
+                    "home_odds": _parse_american_odds_str(h["displayOdds"]["american"]),
+                    "away_line": a.get("points", 0),
+                    "away_odds": _parse_american_odds_str(a["displayOdds"]["american"]),
+                }
+
+        # --- Total ---
+        if "Total" in em:
+            tot_sels = [s for s in sels_by_market.get(em["Total"]["id"], []) if s.get("main")]
+            ov = next((s for s in tot_sels if s.get("outcomeType") == "Over"), None)
+            un = next((s for s in tot_sels if s.get("outcomeType") == "Under"), None)
+            if ov and un:
+                game["markets"]["total"] = {
+                    "line": ov.get("points", 0),
+                    "over_odds": _parse_american_odds_str(ov["displayOdds"]["american"]),
+                    "under_odds": _parse_american_odds_str(un["displayOdds"]["american"]),
+                }
+
+        games.append(game)
+
+    return {
+        "source": "draftkings_live",
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "games_count": len(games),
+        "games": games,
+    }
+
+
+def _fallback_cached_dk_odds() -> dict:
+    """Extract DraftKings rows from odds.json as a silent fallback."""
+    data = _load_data()
+    dk_records = [r for r in data["odds"] if r["sportsbook"] == "DraftKings"]
+
+    games: list[dict] = []
+    seen: set[str] = set()
+    for r in dk_records:
+        gid = r["game_id"]
+        if gid in seen:
+            continue
+        seen.add(gid)
+        games.append({
+            "event_id": gid,
+            "name": f"{r['away_team']} @ {r['home_team']}",
+            "start_time": r["commence_time"],
+            "home_team": r["home_team"],
+            "away_team": r["away_team"],
+            "markets": {
+                "moneyline": {
+                    "home_odds": r["markets"]["moneyline"]["home_odds"],
+                    "away_odds": r["markets"]["moneyline"]["away_odds"],
+                },
+                "spread": {
+                    "home_line": r["markets"]["spread"]["home_line"],
+                    "home_odds": r["markets"]["spread"]["home_odds"],
+                    "away_line": r["markets"]["spread"]["away_line"],
+                    "away_odds": r["markets"]["spread"]["away_odds"],
+                },
+                "total": {
+                    "line": r["markets"]["total"]["line"],
+                    "over_odds": r["markets"]["total"]["over_odds"],
+                    "under_odds": r["markets"]["total"]["under_odds"],
+                },
+            },
+        })
+
+    return {
+        "source": "draftkings_cached",
+        "note": "Live DraftKings API was unreachable; showing cached data from odds.json",
+        "games_count": len(games),
+        "games": games,
+    }
+
+
+# ---------------------------------------------------------------------------
 # OpenAI tool schemas
 # ---------------------------------------------------------------------------
 
@@ -596,6 +778,20 @@ TOOL_SCHEMAS: list[dict] = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_live_draftkings_odds",
+            "description": (
+                "Fetches live NBA odds directly from the DraftKings sportsbook API. "
+                "Returns current moneyline, spread, and total (over/under) odds for every "
+                "game on tonight's slate. Call this as a FINAL step after rank_sportsbooks "
+                "to publish the latest DraftKings lines in the briefing. "
+                "Falls back silently to cached data if the API is unreachable."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 
@@ -611,6 +807,7 @@ TOOL_DISPATCH: dict[str, Any] = {
     "detect_outlier_prices": detect_outlier_prices,
     "detect_arbitrage_opportunities": detect_arbitrage_opportunities,
     "rank_sportsbooks": rank_sportsbooks,
+    "get_live_draftkings_odds": get_live_draftkings_odds,
 }
 
 

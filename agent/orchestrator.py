@@ -49,6 +49,7 @@ Use the tools systematically, in this order:
 4. Call `detect_arbitrage_opportunities` to find guaranteed-profit situations
 5. Call `rank_sportsbooks` to assess overall book quality
 6. For any game that has anomalies or interesting lines, call `calculate_game_metrics` to get full vig/implied-prob analysis
+7. Call `get_live_draftkings_odds` to fetch and publish the latest DraftKings lines for all games
 
 Do NOT dump all data into your answer. Use tools to fetch only what you need, when you need it.
 
@@ -78,6 +79,13 @@ Rank all 8 books with their composite score, avg vig %, and any notable issues.
 
 ### 🔍 Analysis Notes
 Any patterns you noticed, caveats about the data, or things a bettor should know before acting on this briefing.
+
+### 🏀 DraftKings Live Lines
+Present the live DraftKings odds fetched via `get_live_draftkings_odds`. For each game list:
+- Moneyline (home / away)
+- Spread (line and price for each side)
+- Total (over/under line and price)
+Note the data source (live API or cached fallback) and the fetch timestamp.
 
 ## Rules
 - Always show your math (vig %, implied probability, z-scores). Don't hand-wave numbers.
