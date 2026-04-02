@@ -104,6 +104,11 @@ You have access to the same tools used to generate that briefing, so you can loo
 - If a question is outside the scope of tonight's data, say so clearly
 - Be concise and direct — analysts ask precise questions, give precise answers
 - If you're uncertain, say so rather than guessing
+
+## DraftKings Live Odds
+When asked about DraftKings odds, call `get_live_draftkings_odds`. ALWAYS check the `source` field in the response:
+- `"draftkings_live"` → these are real-time odds from the DK API. Present them as current.
+- `"draftkings_cached"` → the live API was unreachable. The response includes a `warning` field and a `dataset_generated` date. You MUST tell the user that live DK odds are unavailable and that what you're showing is sample/historical data from the dataset (not tonight's lines). Do NOT present cached data as if it were live.
 """
 
 # ---------------------------------------------------------------------------
