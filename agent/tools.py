@@ -625,9 +625,20 @@ def _fallback_cached_dk_odds() -> dict:
             },
         })
 
+    # Include the dataset date so the LLM knows these are NOT live
+    dataset_date = data.get("generated", "unknown")
+
     return {
         "source": "draftkings_cached",
-        "note": "Live DraftKings API was unreachable; showing cached data from odds.json",
+        "warning": (
+            "IMPORTANT: The DraftKings live API was unreachable (likely geo-restricted). "
+            "The data below is from the SAMPLE dataset generated on "
+            f"{dataset_date}, NOT tonight's live odds. "
+            "Do NOT present this as current or live DraftKings data. "
+            "Inform the user that live DK odds are unavailable from this location "
+            "and these are sample/historical lines for demonstration only."
+        ),
+        "dataset_generated": dataset_date,
         "games_count": len(games),
         "games": games,
     }
@@ -787,7 +798,10 @@ TOOL_SCHEMAS: list[dict] = [
                 "Returns current moneyline, spread, and total (over/under) odds for every "
                 "game on tonight's slate. Call this as a FINAL step after rank_sportsbooks "
                 "to publish the latest DraftKings lines in the briefing. "
-                "Falls back silently to cached data if the API is unreachable."
+                "If the API is unreachable (geo-restricted), returns cached SAMPLE data — "
+                "check the 'source' field: 'draftkings_live' means real-time data, "
+                "'draftkings_cached' means sample/historical data that should NOT be "
+                "presented as tonight's live odds."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },

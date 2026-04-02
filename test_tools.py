@@ -46,6 +46,9 @@ check("has source", "source" in dk)
 check("has games_count", "games_count" in dk)
 check("has games list", "games" in dk)
 check("games_count > 0", dk.get("games_count", 0) > 0, f"got {dk.get('games_count')}")
+if dk.get("source") == "draftkings_cached":
+    check("cached has warning", "warning" in dk, "missing warning field")
+    check("cached has dataset_generated", "dataset_generated" in dk)
 print(f"  (source={dk.get('source')}, count={dk.get('games_count')})")
 
 for g in dk.get("games", []):
